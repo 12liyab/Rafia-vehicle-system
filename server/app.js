@@ -13,8 +13,8 @@ app.use(express.json());
 const path = require('path');
 app.use(express.static(path.join(__dirname)));
 
-app.get('/user.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'user.html'));
+app.get('/index.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // MongoDB connection string with credentials from environment variables
