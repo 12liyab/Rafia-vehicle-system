@@ -1,5 +1,5 @@
 // API Base URL - matches your backend port 50002
-const API_BASE_URL = 'http://localhost:50001/api';
+const API_BASE_URL = 'https://rafia-vehicle-system.onrender.com/api';
 
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize the application
