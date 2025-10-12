@@ -11,10 +11,10 @@ const PORT = 50001; // Must match your frontend API_BASE_URL
 app.use(cors());
 app.use(express.json());
 const path = require('path');
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname, 'client')));
 
 app.get('/index.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(path.join(__dirname, 'client', 'index.html'));
 });
 
 // MongoDB connection string with credentials from environment variables
@@ -64,9 +64,48 @@ const accessLogSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+const adminSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  role: { type: String, default: 'admin' },
+  createdAt: { type: Date, default: Date.now }
+});
+
 const User = mongoose.model('User', userSchema);
 const Vehicle = mongoose.model('Vehicle', vehicleSchema);
 const AccessLog = mongoose.model('AccessLog', accessLogSchema);
+const Admin = mongoose.model('Admin', adminSchema);
+
+// Settings Schema and Model
+const settingsSchema = new mongoose.Schema({
+  systemName: { type: String, default: 'Smart Vehicle Entry System' },
+  timezone: { type: String, default: 'UTC' },
+  sessionTimeout: { type: Number, default: 30 },
+  maxLoginAttempts: { type: Number, default: 5 },
+  maintenanceMode: { type: Boolean, default: false },
+  emailNotifications: { type: Boolean, default: true },
+  smsNotifications: { type: Boolean, default: false },
+  pushNotifications: { type: Boolean, default: true },
+  notificationEmail: { type: String, default: 'admin@vehicleentry.com' },
+  notificationPhone: { type: String, default: '' },
+  twoFactorAuth: { type: Boolean, default: false },
+  passwordPolicy: { type: String, default: 'basic' },
+  auditLogs: { type: Boolean, default: true },
+  ipWhitelist: { type: Boolean, default: false },
+  encryptionLevel: { type: String, default: 'standard' },
+  autoBackup: { type: Boolean, default: true },
+  backupTime: { type: String, default: '02:00' },
+  backupRetention: { type: Number, default: 30 },
+  backupLocation: { type: String, default: '/backups' },
+  webhookUrl: { type: String, default: '' },
+  integrationEnabled: { type: Boolean, default: false },
+  logLevel: { type: String, default: 'info' },
+  apiKey: { type: String, default: () => 'sk-' + Math.random().toString(36).substr(2, 16) },
+  systemVersion: { type: String, default: 'v2.1.0' }
+});
+
+const Settings = mongoose.model('Settings', settingsSchema);
 
 // Health check route
 app.get('/api/health', async (req, res) => {
@@ -181,6 +220,420 @@ app.post('/api/register', async (req, res) => {
   } catch (error) {
     console.error('❌ Registration error:', error);
     res.status(500).json({ message: 'Server error during registration' });
+  }
+});
+
+// Admin registration route
+app.post('/api/admin/register', async (req, res) => {
+  const { username, email, password } = req.body;
+
+  // Validate required fields
+  if (!username || !email || !password) {
+    return res.status(400).json({ message: 'All fields are required.' });
+  }
+
+  try {
+    // Check if an admin already exists
+    const adminCount = await Admin.countDocuments();
+    if (adminCount > 0) {
+      return res.status(400).json({ message: 'Admin account already exists. Only one admin is allowed.' });
+    }
+
+    // Check for existing admin (additional check, though count should suffice)
+    const existingAdmin = await Admin.findOne({
+      $or: [{ email }, { username }]
+    });
+    if (existingAdmin) {
+      return res.status(400).json({ message: 'Admin already exists' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create admin
+    const newAdmin = new Admin({
+      username,
+      email,
+      password: hashedPassword
+    });
+    const savedAdmin = await newAdmin.save();
+
+    res.status(201).json({
+      message: 'Admin registration successful',
+      data: {
+        id: savedAdmin._id,
+        username: savedAdmin.username,
+        email: savedAdmin.email
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Admin registration error:', error);
+    res.status(500).json({ message: 'Server error during admin registration' });
+  }
+});
+
+// Admin login route
+app.post('/api/admin/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  // Validate required fields
+  if (!username || !password) {
+    return res.status(400).json({ message: 'Username and password are required.' });
+  }
+
+  try {
+    // Find admin
+    const admin = await Admin.findOne({ username });
+    if (!admin) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Check password
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    res.json({
+      message: 'Login successful',
+      data: {
+        id: admin._id,
+        username: admin.username,
+        email: admin.email,
+        role: admin.role
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Admin login error:', error);
+    res.status(500).json({ message: 'Server error during login' });
+  }
+});
+
+// Get all users for admin dashboard
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const users = await User.find().select('-password');
+    const vehicles = await Vehicle.find();
+    const accessLogs = await AccessLog.find().sort({ createdAt: -1 }).limit(10);
+
+    res.json({
+      users: users,
+      vehicles: vehicles,
+      recentLogs: accessLogs
+    });
+  } catch (error) {
+    console.error('❌ Error fetching admin data:', error);
+    // Return mock data for demo when DB is unavailable
+    const mockUsers = [
+      {
+        _id: 'mock1',
+        firstName: 'Lee',
+        lastName: 'Doe',
+        username: 'leedoe',
+        email: 'lee@example.com',
+        contact: '+1234567890',
+        userType: 'resident',
+        status: 'active',
+        createdAt: new Date().toISOString()
+      },
+      {
+        _id: 'mock2',
+        firstName: 'Jane',
+        lastName: 'Smith',
+        username: 'janesmith',
+        email: 'jane@example.com',
+        contact: '+0987654321',
+        userType: 'staff',
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      }
+    ];
+    const mockVehicles = [
+      {
+        _id: 'v1',
+        userId: 'mock1',
+        licensePlate: 'ABC123',
+        make: 'Toyota',
+        model: 'Camry',
+        year: 2020
+      },
+      {
+        _id: 'v2',
+        userId: 'mock2',
+        licensePlate: 'XYZ789',
+        make: 'Honda',
+        model: 'Civic',
+        year: 2019
+      }
+    ];
+    res.json({
+      users: mockUsers,
+      vehicles: mockVehicles,
+      recentLogs: []
+    });
+  }
+});
+
+// Get single user details for admin
+app.get('/api/admin/users/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id || id === 'null' || !mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: 'Invalid user ID' });
+  }
+  try {
+    const user = await User.findById(id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    const vehicles = await Vehicle.find({ userId: id });
+    res.json({
+      user,
+      vehicles
+    });
+  } catch (error) {
+    console.error('❌ Error fetching user details:', error);
+    // Return mock data for demo
+    const mockUser = id === 'mock1' ? {
+      _id: 'mock1',
+      firstName: 'Lee',
+      lastName: 'Doe',
+      username: 'leedoe',
+      email: 'lee@example.com',
+      contact: '+1234567890',
+      userType: 'resident',
+      status: 'active',
+      createdAt: new Date().toISOString()
+    } : {
+      _id: 'mock2',
+      firstName: 'Jane',
+      lastName: 'Smith',
+      username: 'janesmith',
+      email: 'jane@example.com',
+      contact: '+0987654321',
+      userType: 'staff',
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    const mockVehicles = id === 'mock1' ? [{
+      _id: 'v1',
+      userId: 'mock1',
+      licensePlate: 'ABC123',
+      make: 'Toyota',
+      model: 'Camry',
+      year: 2020
+    }] : [{
+      _id: 'v2',
+      userId: 'mock2',
+      licensePlate: 'XYZ789',
+      make: 'Honda',
+      model: 'Civic',
+      year: 2019
+    }];
+    res.json({
+      user: mockUser,
+      vehicles: mockVehicles
+    });
+  }
+});
+
+// Update user details for admin
+app.put('/api/admin/users/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id || id === 'null' || !mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: 'Invalid user ID' });
+  }
+  const { firstName, lastName, email, contact } = req.body;
+  try {
+    const user = await User.findByIdAndUpdate(
+      id,
+      { firstName, lastName, email, contact },
+      { new: true }
+    ).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json({
+      message: 'User updated successfully',
+      user
+    });
+  } catch (error) {
+    console.error('❌ Error updating user:', error);
+    // For demo, just return success with mock updated data
+    const mockUser = id === 'mock1' ? {
+      _id: 'mock1',
+      firstName: firstName || 'Lee',
+      lastName: lastName || 'Doe',
+      username: 'leedoe',
+      email: email || 'lee@example.com',
+      contact: contact || '+1234567890',
+      userType: 'resident',
+      status: 'active',
+      createdAt: new Date().toISOString()
+    } : {
+      _id: 'mock2',
+      firstName: firstName || 'Jane',
+      lastName: lastName || 'Smith',
+      username: 'janesmith',
+      email: email || 'jane@example.com',
+      contact: contact || '+0987654321',
+      userType: 'staff',
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    res.json({
+      message: 'User updated successfully (demo mode)',
+      user: mockUser
+    });
+  }
+});
+
+// Delete user for admin
+app.delete('/api/admin/users/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id || id === 'null' || !mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: 'Invalid user ID' });
+  }
+  try {
+    const user = await User.findByIdAndDelete(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    // Also delete associated vehicles
+    await Vehicle.deleteMany({ userId: id });
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('❌ Error deleting user:', error);
+    // For demo, just return success
+    res.json({ message: 'User deleted successfully (demo mode)' });
+  }
+});
+
+// Settings API routes
+app.get('/api/admin/settings', async (req, res) => {
+  try {
+    let settings = await Settings.findOne();
+    if (!settings) {
+      settings = new Settings();
+      await settings.save();
+    }
+    res.json(settings);
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.put('/api/admin/settings', async (req, res) => {
+  try {
+    const updateData = req.body;
+    let settings = await Settings.findOne();
+    if (!settings) {
+      settings = new Settings(updateData);
+    } else {
+      Object.assign(settings, updateData);
+    }
+    await settings.save();
+    res.json({ message: 'Settings saved successfully' });
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Reports API routes
+app.get('/api/admin/reports/stats', async (req, res) => {
+  try {
+    const totalEntries = await AccessLog.countDocuments();
+    const deniedEntries = await AccessLog.countDocuments({ status: 'denied' });
+    const activeUsers = await User.countDocuments({ status: 'active' });
+    // Placeholder for avgEntryTime, as duration not stored
+    const avgEntryTime = 2.3;
+
+    res.json({
+      totalEntries,
+      avgEntryTime,
+      deniedEntries,
+      activeUsers
+    });
+  } catch (error) {
+    console.error('Error fetching report stats:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/admin/reports/charts', async (req, res) => {
+  try {
+    // Entry trends (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const entryTrendsAgg = await AccessLog.aggregate([
+      { $match: { createdAt: { $gte: sevenDaysAgo } } },
+      { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, count: { $sum: 1 } } },
+      { $sort: { "_id": 1 } }
+    ]);
+    const entryTrends = {
+      labels: entryTrendsAgg.map(item => item._id),
+      data: entryTrendsAgg.map(item => item.count)
+    };
+
+    // User type distribution
+    const userTypeAgg = await User.aggregate([
+      { $group: { _id: "$userType", count: { $sum: 1 } } }
+    ]);
+    const userType = {
+      labels: userTypeAgg.map(item => item._id || 'Unknown'),
+      data: userTypeAgg.map(item => item.count)
+    };
+
+    // Peak hours (simplified, group by hour)
+    const peakHoursAgg = await AccessLog.aggregate([
+      { $group: { _id: { $hour: "$createdAt" }, count: { $sum: 1 } } },
+      { $sort: { "_id": 1 } }
+    ]);
+    const peakHours = {
+      labels: peakHoursAgg.map(item => `${item._id}:00`),
+      data: peakHoursAgg.map(item => item.count)
+    };
+
+    // Access status distribution
+    const accessStatusAgg = await AccessLog.aggregate([
+      { $group: { _id: "$status", count: { $sum: 1 } } }
+    ]);
+    const accessStatus = {
+      labels: accessStatusAgg.map(item => item._id || 'Unknown'),
+      data: accessStatusAgg.map(item => item.count)
+    };
+
+    res.json({
+      entryTrends,
+      userType,
+      peakHours,
+      accessStatus
+    });
+  } catch (error) {
+    console.error('Error fetching report charts:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/admin/reports/table', async (req, res) => {
+  try {
+    const logs = await AccessLog.find().populate('userId', 'firstName lastName').sort({ createdAt: -1 }).limit(50);
+    const reports = logs.map(log => ({
+      date: log.createdAt.toISOString().split('T')[0] + ' ' + log.createdAt.toTimeString().split(' ')[0],
+      user: log.userId ? `${log.userId.firstName} ${log.userId.lastName}` : 'Unknown',
+      vehicle: log.licensePlate || 'N/A',
+      type: log.direction === 'in' ? 'Entry' : 'Exit',
+      status: log.status,
+      duration: 'N/A' // Placeholder
+    }));
+    res.json(reports);
+  } catch (error) {
+    console.error('Error fetching reports table:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

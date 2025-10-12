@@ -247,3 +247,25 @@
                 font-size: 1.25rem;
             }
         }
+
+        /* Admin Link */
+        .admin-link {
+            text-align: center;
+            margin-top: 2rem;
+            padding: 1rem;
+        }
+
+        .admin-link-btn {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--primary);
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .admin-link-btn:hover {
+            background-color: var(--primary);
+            color: white;
+        }
