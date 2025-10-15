@@ -1015,17 +1015,17 @@
                         <div class="users-table">
                             <div class="table-container">
                                 <table>
-                                    <thead>
-                                        <tr>
-                                            <th>ID</th>
-                                            <th>Full Name</th>
-                                            <th>Email</th>
-                                            <th>Phone</th>
-                                            <th>Vehicle</th>
-                                            <th>User Type</th>
-                                            <th>Registration Date</th>
-                                        </tr>
-                                    </thead>
+<thead>
+<tr>
+<th>ID</th>
+<th>Full Name</th>
+<th>Email</th>
+<th>Phone</th>
+<th>Vehicle</th>
+<th>User Type</th>
+<th>Registration Date</th>
+</tr>
+</thead>
                                     <tbody id="usersTable">
                                         <!-- Users will be populated here -->
                                     </tbody>
@@ -1259,6 +1259,62 @@
             </div>
         </div>
 
+        <!-- Add User Modal -->
+        <div id="addUserModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Add New User</h3>
+                    <span class="close" id="addUserModalClose">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div id="addUserMessage" class="message"></div>
+                    <form id="addUserForm">
+                        <div class="form-group">
+                            <label for="addFirstName">First Name</label>
+                            <input type="text" id="addFirstName" name="firstName" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addLastName">Last Name</label>
+                            <input type="text" id="addLastName" name="lastName" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addUsername">Username</label>
+                            <input type="text" id="addUsername" name="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addEmail">Email</label>
+                            <input type="email" id="addEmail" name="email" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addContact">Contact</label>
+                            <input type="text" id="addContact" name="contact">
+                        </div>
+                        <div class="form-group">
+                            <label for="addUserType">User Type</label>
+                            <select id="addUserType" name="userType" required>
+                                <option value="visitor">Visitor</option>
+                                <option value="resident">Resident</option>
+                                <option value="staff">Staff</option>
+                                <option value="vendor">Vendor</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="addStatus">Status</label>
+                            <select id="addStatus" name="status" required>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                                <option value="pending">Pending</option>
+                            </select>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" id="addUserCancel">Cancel</button>
+                            <button type="submit" class="btn">Add User</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
         <!-- Settings Modal -->
         <div id="settingsModal" class="modal">
             <div class="modal-content">
@@ -1311,6 +1367,9 @@
     </div>
 
     <script>
+        // API Base URL - change this to match your backend deployment
+        const API_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:50001' : 'https://rafia-vehicle-system.onrender.com';
+
         document.addEventListener('DOMContentLoaded', function() {
             // DOM Elements
             const loginForm = document.getElementById('loginForm');
@@ -1485,8 +1544,7 @@
             
             // Add user button
             addUserBtn.addEventListener('click', function() {
-                // In a real app, this would open a modal or form to add a new user
-                alert('Add User functionality would open a form here');
+                document.getElementById('addUserModal').style.display = 'block';
             });
             
             // Check if user is already logged in

@@ -174,6 +174,7 @@ document.addEventListener('DOMContentLoaded', function() {
             town: document.getElementById('town').value.trim(),
             country: document.getElementById('country').value,
             contact: document.getElementById('contact').value.trim(),
+            userType: document.getElementById('userType').value,
             password: document.getElementById('password').value,
             licensePlate: document.getElementById('licensePlate').value.trim(),
             chassisNumber: document.getElementById('chassisNumber').value.trim(),
@@ -226,16 +227,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Show success modal
             showSuccessModal(
-                'Account Created Successfully!',
-                `Your account has been created and your vehicle has been registered.
-                 
-                 Vehicle Details:
-                 • ${data.data.vehicle.make} ${data.data.vehicle.model}
-                 • License Plate: ${data.data.vehicle.licensePlate}
-                 • Color: ${data.data.vehicle.color}
-                 • Year: ${data.data.vehicle.year}
-                 
-                 `
+                'Registration Successfully',
+                ''
             );
             
             console.log('Registration successful:', data);
@@ -244,17 +237,9 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Registration error:', error);
             
             // Show user-friendly error message
-            let errorMessage = 'Registration failed. Please try again.';
-            if (error.message.includes('User already exists')) {
-                errorMessage = 'An account with this email or username already exists. Please use different credentials.';
-            } else if (error.message.includes('Vehicle already registered')) {
-                errorMessage = 'A vehicle with this license plate or chassis number is already registered.';
-            } else if (error.message.includes('Network') || error.message.includes('Failed to fetch')) {
+            let errorMessage = error.message || 'Registration failed. Please try again.';
+            if (error.message.includes('Network') || error.message.includes('Failed to fetch')) {
                 errorMessage = 'Cannot connect to server. Please make sure the backend is running on port 50001.';
-            } else if (error.message.includes('All required')) {
-                errorMessage = 'Please fill in all required fields.';
-            } else {
-                errorMessage = error.message;
             }
             
             showStatusMessage(errorMessage, 'error');

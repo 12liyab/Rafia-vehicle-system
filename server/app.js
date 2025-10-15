@@ -39,6 +39,8 @@ const userSchema = new mongoose.Schema({
   country: String,
   contact: String,
   password: { type: String, required: true },
+  userType: { type: String, enum: ['resident', 'staff', 'visitor', 'vendor'], default: 'visitor' },
+  status: { type: String, enum: ['active', 'inactive', 'pending'], default: 'active' },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -127,7 +129,7 @@ app.get('/api/health', async (req, res) => {
 app.post('/api/register', async (req, res) => {
   const {
     firstName, lastName, username, email, address,
-    town, country, contact, password,
+    town, country, contact, password, userType,
     licensePlate, chassisNumber, vehicleMake,
     vehicleModel, vehicleYear, vehicleColor
   } = req.body;
@@ -143,7 +145,13 @@ app.post('/api/register', async (req, res) => {
       $or: [{ email }, { username }]
     });
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      let message = 'User already exists';
+      if (existingUser.email === email) {
+        message = 'An account with this email address already exists';
+      } else if (existingUser.username === username) {
+        message = 'This username is already taken';
+      }
+      return res.status(400).json({ message });
     }
 
     // Check for existing vehicle by license plate or chassis number
@@ -151,7 +159,13 @@ app.post('/api/register', async (req, res) => {
       $or: [{ licensePlate }, { chassisNumber }]
     });
     if (existingVehicle) {
-      return res.status(400).json({ message: 'Vehicle already registered' });
+      let message = 'Vehicle already registered';
+      if (existingVehicle.licensePlate === licensePlate) {
+        message = 'A vehicle with this license plate is already registered';
+      } else if (existingVehicle.chassisNumber === chassisNumber) {
+        message = 'A vehicle with this chassis number is already registered';
+      }
+      return res.status(400).json({ message });
     }
 
     // Hash password
@@ -168,7 +182,8 @@ app.post('/api/register', async (req, res) => {
       town,
       country,
       contact,
-      password: hashedPassword
+      password: hashedPassword,
+      userType: userType || 'visitor'
     });
     const savedUser = await newUser.save();
 
@@ -490,6 +505,69 @@ app.put('/api/admin/users/:id', async (req, res) => {
   }
 });
 
+// Create user for admin
+app.post('/api/admin/users', async (req, res) => {
+  const { firstName, lastName, username, email, contact, userType, status } = req.body;
+
+  // Validate required fields
+  if (!firstName || !lastName || !username || !email) {
+    return res.status(400).json({ message: 'First name, last name, username, and email are required.' });
+  }
+
+  try {
+    // Check for existing user by email or username
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }]
+    });
+    if (existingUser) {
+      let message = 'User already exists';
+      if (existingUser.email === email) {
+        message = 'An account with this email address already exists';
+      } else if (existingUser.username === username) {
+        message = 'This username is already taken';
+      }
+      return res.status(400).json({ message });
+    }
+
+    // Generate a default password (user can change later)
+    const defaultPassword = 'temp123';
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(defaultPassword, salt);
+
+    // Create user
+    const newUser = new User({
+      firstName,
+      lastName,
+      username,
+      email,
+      contact,
+      password: hashedPassword,
+      userType: userType || 'visitor',
+      status: status || 'active'
+    });
+    const savedUser = await newUser.save();
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: {
+        _id: savedUser._id,
+        firstName: savedUser.firstName,
+        lastName: savedUser.lastName,
+        username: savedUser.username,
+        email: savedUser.email,
+        contact: savedUser.contact,
+        userType: savedUser.userType,
+        status: savedUser.status,
+        createdAt: savedUser.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error creating user:', error);
+    res.status(500).json({ message: 'Server error during user creation' });
+  }
+});
+
 // Delete user for admin
 app.delete('/api/admin/users/:id', async (req, res) => {
   const { id } = req.params;
@@ -508,6 +586,86 @@ app.delete('/api/admin/users/:id', async (req, res) => {
     console.error('❌ Error deleting user:', error);
     // For demo, just return success
     res.json({ message: 'User deleted successfully (demo mode)' });
+  }
+});
+
+// Create vehicle for admin
+app.post('/api/admin/vehicles', async (req, res) => {
+  const { licensePlate, chassisNumber, make, model, year, color, userId } = req.body;
+
+  // Validate required fields
+  if (!licensePlate || !chassisNumber || !userId) {
+    return res.status(400).json({ message: 'License plate, chassis number, and user ID are required.' });
+  }
+
+  // Validate userId
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ message: 'Invalid user ID' });
+  }
+
+  try {
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check for existing vehicle by license plate or chassis number
+    const existingVehicle = await Vehicle.findOne({
+      $or: [{ licensePlate }, { chassisNumber }]
+    });
+    if (existingVehicle) {
+      let message = 'Vehicle already registered';
+      if (existingVehicle.licensePlate === licensePlate) {
+        message = 'A vehicle with this license plate is already registered';
+      } else if (existingVehicle.chassisNumber === chassisNumber) {
+        message = 'A vehicle with this chassis number is already registered';
+      }
+      return res.status(400).json({ message });
+    }
+
+    // Create vehicle
+    const newVehicle = new Vehicle({
+      userId,
+      licensePlate,
+      chassisNumber,
+      make,
+      model,
+      year,
+      color
+    });
+    const savedVehicle = await newVehicle.save();
+
+    // Log vehicle addition
+    const newAccessLog = new AccessLog({
+      userId,
+      licensePlate,
+      action: 'Vehicle Added',
+      gate: 'Admin Portal',
+      direction: 'in',
+      status: 'success',
+      details: 'Vehicle added via admin portal.'
+    });
+    await newAccessLog.save();
+
+    res.status(201).json({
+      message: 'Vehicle added successfully',
+      vehicle: {
+        _id: savedVehicle._id,
+        userId: savedVehicle.userId,
+        licensePlate: savedVehicle.licensePlate,
+        chassisNumber: savedVehicle.chassisNumber,
+        make: savedVehicle.make,
+        model: savedVehicle.model,
+        year: savedVehicle.year,
+        color: savedVehicle.color,
+        createdAt: savedVehicle.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error creating vehicle:', error);
+    res.status(500).json({ message: 'Server error during vehicle creation' });
   }
 });
 
